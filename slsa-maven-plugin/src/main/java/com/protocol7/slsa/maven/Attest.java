@@ -198,6 +198,8 @@ public class Attest extends AbstractMojo {
             // upload to rekor transparency log
             final String rekorEntryUrl = rekor.submitInToto(envelope, keyPair.getPublic());
 
+            getLog().info("Uploaded to Rekor transparency log: " + rekorEntryUrl);
+
             // attach artifacts
             final String groupId = project.getArtifact().getGroupId();
             final String artifactId = project.getArtifact().getArtifactId();
