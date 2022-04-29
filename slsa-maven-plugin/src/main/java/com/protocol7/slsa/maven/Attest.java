@@ -165,7 +165,9 @@ public class Attest extends AbstractMojo {
     provenance.setMaterials(materials);
 
     final Recipe recipe = new Recipe();
-    recipe.setEntryPoint(String.join(" ", session.getGoals()));
+    recipe.setType("https://maven.apache.org/Attestations/Maven@v1");
+    recipe.setDefinedInMaterial(0);
+    recipe.setEntryPoint("pom.xml:" + String.join(" ", session.getGoals()));
 
     provenance.setRecipe(recipe);
 
