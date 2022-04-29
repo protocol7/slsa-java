@@ -1,79 +1,22 @@
 package com.protocol7.slsa;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.api.client.http.GenericUrl;
 import com.google.api.client.http.HttpRequest;
 import com.google.api.client.http.HttpResponse;
 import com.google.api.client.http.HttpTransport;
 import com.google.api.client.http.json.JsonHttpContent;
 import com.google.api.client.json.gson.GsonFactory;
-import com.google.common.io.BaseEncoding;
-import io.github.intoto.dsse.helpers.SimpleECDSASigner;
-import io.github.intoto.dsse.models.IntotoEnvelope;
-import io.github.intoto.exceptions.InvalidModelException;
-import io.github.intoto.helpers.IntotoHelper;
-import io.github.intoto.models.DigestSetAlgorithmType;
-import io.github.intoto.models.Statement;
-import io.github.intoto.models.Subject;
-import io.github.intoto.slsa.models.Builder;
-import io.github.intoto.slsa.models.Completeness;
-import io.github.intoto.slsa.models.Metadata;
-import io.github.intoto.slsa.models.Provenance;
-import org.bouncycastle.util.io.pem.PemObject;
-import org.bouncycastle.util.io.pem.PemWriter;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.StringWriter;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.*;
+import java.security.PublicKey;
 import java.util.Base64;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class Rekor {
-
-    public static void main(String[] args) throws InvalidModelException, IOException, InvalidAlgorithmParameterException, NoSuchAlgorithmException, SignatureException, InvalidKeyException {
-        Subject subject=new Subject();
-        subject.setName("curl-7.72.0.tar.bz2");
-        subject.setDigest(
-                Map.of(
-                        DigestSetAlgorithmType.SHA256.toString(),
-                        "d4d5899a3868fbb6ae1856c3e55a32ce35913de3956d1973caccd37bd0174fa2"));
-
-        Provenance provenance = new Provenance();
-        Builder builder = new Builder();
-        builder.setId("my builder");
-        provenance.setBuilder(builder);
-
-        Metadata metadata = new Metadata();
-        Completeness completeness = new Completeness();
-        completeness.setArguments(true);
-        completeness.setEnvironment(true);
-        completeness.setMaterials(true);
-
-        metadata.setCompleteness(completeness);
-
-        provenance.setMetadata(metadata);
-
-        Statement statement=new Statement();
-        statement.setSubject(List.of(subject));
-        statement.setPredicate(provenance);
-
-        KeyPair keyPair = Sigstore.generateKeyPair(Sigstore.SIGNING_ALGORITHM, Sigstore.SIGNING_ALGORITHM_SPEC);
-
-        SimpleECDSASigner signer = new SimpleECDSASigner(keyPair.getPrivate(), "keyid");
-
-        String json = IntotoHelper.produceIntotoEnvelopeAsJson(statement,signer, true);
-
-        Rekor rekor = new Rekor(Sigstore.getHttpTransport());
-
-        String url = rekor.submitInToto(json, keyPair.getPublic());
-
-        System.out.println(url);
-    }
 
     /**
      * URL of Rekor instance

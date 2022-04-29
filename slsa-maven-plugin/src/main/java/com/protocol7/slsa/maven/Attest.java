@@ -7,7 +7,6 @@ import com.protocol7.slsa.OIDC;
 import com.protocol7.slsa.Rekor;
 import com.protocol7.slsa.Sigstore;
 import io.github.intoto.dsse.helpers.SimpleECDSASigner;
-import io.github.intoto.exceptions.InvalidModelException;
 import io.github.intoto.helpers.IntotoHelper;
 import io.github.intoto.models.DigestSetAlgorithmType;
 import io.github.intoto.models.Statement;
@@ -27,11 +26,11 @@ import org.apache.maven.project.MavenProject;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.nio.file.Files;
-import java.security.*;
+import java.security.KeyPair;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertPath;
-import java.security.cert.CertificateException;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Date;
@@ -70,6 +69,12 @@ public class Attest extends AbstractMojo {
 
     @Parameter(property = "oidcDeviceFlow", defaultValue = "false")
     private String oidcDeviceFlow;
+
+    @Parameter(property = "fulcioUrl", defaultValue = Fulcio.PUBLIC_URL)
+    private String fulcioUrl;
+
+    @Parameter(property = "rekorUrl", defaultValue = Rekor.PUBLIC_URL)
+    private String rekorUrl;
 
     @Component
     private ArtifactHandlerManager artifactHandlerManager;
@@ -150,29 +155,28 @@ public class Attest extends AbstractMojo {
         statement.setPredicate(provenance);
 
         // TODO allow URL parameters to be configured
-        System.out.println("token " + oidcToken);
-        System.out.println("deviceFlow " + oidcDeviceFlow);
-        System.out.println("tokenUrl " + oidcTokenUrl);
         final OIDC oidc;
         if ("true".equals(oidcDeviceFlow)) {
             oidc = new OIDC(getHttpTransport(), oidcTokenUrl, oidcToken);
         } else {
             oidc = new OIDC(getHttpTransport(), oidcAuthUrl, oidcTokenUrl, OIDC.DEFAULT_OIDC_CLIENT_ID);
         }
-        final Fulcio fulcio = new Fulcio(getHttpTransport());
-        final Rekor rekor = new Rekor(getHttpTransport());
+        final Fulcio fulcio = new Fulcio(getHttpTransport(), fulcioUrl);
+        final Rekor rekor = new Rekor(getHttpTransport(), rekorUrl);
 
         try {
             // OIDC dance to get signing email
             final OIDC.IDTokenResult idToken = oidc.getIDToken();
 
+            getLog().info("Got OIDC JWT for: " + idToken.getActor());
+
             final KeyPair keyPair = Sigstore.generateKeyPair(Sigstore.SIGNING_ALGORITHM, Sigstore.SIGNING_ALGORITHM_SPEC);
 
-            // sign email address with private key
-            final String signedEmail = Sigstore.signActor(idToken.getActor(), keyPair.getPrivate());
+            // sign email actor name with private key to prove access to private key
+            final String signedActor = Sigstore.signActor(idToken.getActor(), keyPair.getPrivate());
 
             // push to fulcio, get signing cert chain
-            final CertPath certs = fulcio.getSigningCert(signedEmail, keyPair.getPublic(), idToken.getIdToken());
+            final CertPath certs = fulcio.getSigningCert(signedActor, keyPair.getPublic(), idToken.getIdToken());
 
             // TODO wrap signer with private key and signing cert?
 
@@ -189,18 +193,20 @@ public class Attest extends AbstractMojo {
 
             final File certFile = new File(outputDirectory, filePrefix + ".attestation.pem");
             Sigstore.writeSigningCertToFile(certs, certFile);
+            getLog().info("Certificate chain written to : " + certFile);
 
             // upload to rekor transparency log
             final String rekorEntryUrl = rekor.submitInToto(envelope, keyPair.getPublic());
 
-            getLog().info(String.format("Created entry in transparency log: '%s'", rekorEntryUrl));
-
             // attach artifacts
-            final Artifact jsonArtifact = new DefaultArtifact(project.getArtifact().getGroupId(), project.getArtifact().getArtifactId(), project.getArtifact().getVersion(), null, "attestion-json", null, artifactHandlerManager.getArtifactHandler("attestion-json"));
+            final String groupId = project.getArtifact().getGroupId();
+            final String artifactId = project.getArtifact().getArtifactId();
+            final String version = project.getArtifact().getVersion();
+            final Artifact jsonArtifact = new DefaultArtifact(groupId, artifactId, version, null, "attestion-json", null, artifactHandlerManager.getArtifactHandler("attestion-json"));
             jsonArtifact.setFile(attestFile);
             project.addAttachedArtifact(jsonArtifact);
 
-            final Artifact certsArtifact = new DefaultArtifact(project.getArtifact().getGroupId(), project.getArtifact().getArtifactId(), project.getArtifact().getVersion(), null, "attestion-certs", null, artifactHandlerManager.getArtifactHandler("attestion-certs"));
+            final Artifact certsArtifact = new DefaultArtifact(groupId, artifactId, version, null, "attestion-certs", null, artifactHandlerManager.getArtifactHandler("attestion-certs"));
             certsArtifact.setFile(certFile);
             project.addAttachedArtifact(certsArtifact);
 
