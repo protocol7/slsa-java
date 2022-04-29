@@ -5,7 +5,6 @@ import com.google.api.client.http.apache.v2.ApacheHttpTransport;
 import com.google.api.client.util.PemReader;
 import jdk.security.jarsigner.JarSigner;
 import org.apache.commons.io.output.TeeOutputStream;
-import org.apache.commons.validator.routines.EmailValidator;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.maven.shared.jarsigner.JarSignerUtil;
 
@@ -13,6 +12,7 @@ import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.cert.*;
 import java.security.spec.AlgorithmParameterSpec;
@@ -45,7 +45,7 @@ public class Sigstore {
         this.rekor = rekor;
     }
 
-    public void signAndUpload(final File inputJar, final File outputSignedJar, final File outputSigningCert) throws InvalidAlgorithmParameterException, NoSuchAlgorithmException, IOException, SignatureException, InvalidKeyException, CertificateException, URISyntaxException {
+    public void signAndUpload(final File inputJar, final File outputSignedJar, final File outputSigningCert) throws InvalidAlgorithmParameterException, NoSuchAlgorithmException, IOException, SignatureException, InvalidKeyException, CertificateException, URISyntaxException, InterruptedException {
 
         // do OIDC dance, get ID token
         final OIDC.IDTokenResult idToken = oidc.getIDToken();
@@ -54,7 +54,7 @@ public class Sigstore {
         final KeyPair keypair = generateKeyPair(SIGNING_ALGORITHM, SIGNING_ALGORITHM_SPEC);
 
         // sign email address with private key
-        final String signedEmail = signEmailAddress(idToken.getEmailAddress(), keypair.getPrivate());
+        final String signedEmail = signActor(idToken.getActor(), keypair.getPrivate());
 
         // push to fulcio, get signing cert chain
         final CertPath certs = fulcio.getSigningCert(signedEmail, keypair.getPublic(), idToken.getIdToken());
@@ -150,25 +150,21 @@ public class Sigstore {
     }
 
     /**
-     * Signs the provided email address using the provided private key
+     * Signs the provided actor using the provided private key
      *
-     * @param emailAddress The email address to sign; this should match the email address in the OIDC token
-     * @param privKey      The private key used to sign the email address
-     * @return base64 encoded String containing the signature for the provided email address
+     * @param actor The actor identity, e.g. email address, to sign
+     * @param privKey      The private key used to sign
+     * @return base64 encoded String containing the signature for the provided actor
      */
-    public static String signEmailAddress(final String emailAddress, final PrivateKey privKey) throws NoSuchAlgorithmException, InvalidKeyException, SignatureException {
+    public static String signActor(final String actor, final PrivateKey privKey) throws NoSuchAlgorithmException, InvalidKeyException, SignatureException {
         if (privKey == null) {
             throw new IllegalArgumentException("private key must be specified");
         }
-        if (emailAddress == null) {
-            throw new IllegalArgumentException("email address must not be null");
-        } else {
-            final EmailValidator ev = EmailValidator.getInstance();
-            if (!ev.isValid(emailAddress)) {
-                throw new IllegalArgumentException(String.format("email address specified '%s' is invalid", emailAddress));
-            }
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
         }
-        System.out.println(String.format("signing email address '%s' as proof of possession of private key", emailAddress));
+
+        System.out.println(String.format("signing actor '%s' as proof of possession of private key", actor));
         final Signature sig;
         switch (privKey.getAlgorithm()) {
             case "EC":
@@ -179,7 +175,7 @@ public class Sigstore {
                         String.format("unable to generate signature for signing algorithm %s", SIGNING_ALGORITHM));
         }
         sig.initSign(privKey);
-        sig.update(emailAddress.getBytes());
+        sig.update(actor.getBytes(StandardCharsets.UTF_8));
         return Base64.getEncoder().encodeToString(sig.sign());
     }
 

@@ -151,7 +151,7 @@ public class Rekor {
         }
 
         final URL rekorEntryUrl = new URL(new URL(instanceURL), rekorResp.getHeaders().getLocation());
-        System.out.println(String.format("Created entry in transparency log for JAR @ '%s'", rekorEntryUrl));
+
         return rekorEntryUrl.toString();
     }
 

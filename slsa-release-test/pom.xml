@@ -20,20 +20,65 @@
     </dependency>
   </dependencies>
 
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>com.protocol7</groupId>
-        <artifactId>slsa-maven-plugin</artifactId>
-        <version>${project.version}</version>
-        <executions>
-          <execution>
-            <goals>
-              <goal>attest</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
+  <profiles>
+    <profile>
+      <id>slsa-on-github</id>
+      <activation>
+        <property>
+          <name>env.ACTIONS_ID_TOKEN_REQUEST_URL</name>
+        </property>
+      </activation>
+
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.protocol7</groupId>
+            <artifactId>slsa-maven-plugin</artifactId>
+            <version>${project.version}</version>
+            <configuration>
+              <oidcDeviceFlow>true</oidcDeviceFlow>
+              <oidcTokenUrl>${env.ACTIONS_ID_TOKEN_REQUEST_URL}</oidcTokenUrl>
+              <oidcToken>${env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}</oidcToken>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>attest</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>slsa-local</id>
+      <activation>
+        <property>
+          <name>!env.ACTIONS_ID_TOKEN_REQUEST_URL</name>
+        </property>
+      </activation>
+
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.protocol7</groupId>
+            <artifactId>slsa-maven-plugin</artifactId>
+            <version>${project.version}</version>
+            <configuration>
+              <oidcDeviceFlow>true</oidcDeviceFlow>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>attest</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

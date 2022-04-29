@@ -27,6 +27,7 @@ import org.apache.maven.project.MavenProject;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.security.*;
 import java.security.cert.CertPath;
@@ -57,6 +58,18 @@ public class Attest extends AbstractMojo {
 
     @Parameter(defaultValue = "${settings.localRepository}", readonly = true)
     private File localRepo;
+
+    @Parameter(property = "oidcAuthUrl", defaultValue = OIDC.OIDC_AUTH_URL)
+    private String oidcAuthUrl;
+
+    @Parameter(property = "oidcTokenUrl", defaultValue = OIDC.OIDC_TOKEN_URL)
+    private String oidcTokenUrl;
+
+    @Parameter(property = "oidcToken")
+    private String oidcToken;
+
+    @Parameter(property = "oidcDeviceFlow", defaultValue = "false")
+    private String oidcDeviceFlow;
 
     @Component
     private ArtifactHandlerManager artifactHandlerManager;
@@ -137,7 +150,15 @@ public class Attest extends AbstractMojo {
         statement.setPredicate(provenance);
 
         // TODO allow URL parameters to be configured
-        final OIDC oidc = new OIDC(getHttpTransport());
+        System.out.println("token " + oidcToken);
+        System.out.println("deviceFlow " + oidcDeviceFlow);
+        System.out.println("tokenUrl " + oidcTokenUrl);
+        final OIDC oidc;
+        if ("true".equals(oidcDeviceFlow)) {
+            oidc = new OIDC(getHttpTransport(), oidcTokenUrl, oidcToken);
+        } else {
+            oidc = new OIDC(getHttpTransport(), oidcAuthUrl, oidcTokenUrl, OIDC.DEFAULT_OIDC_CLIENT_ID);
+        }
         final Fulcio fulcio = new Fulcio(getHttpTransport());
         final Rekor rekor = new Rekor(getHttpTransport());
 
@@ -148,7 +169,7 @@ public class Attest extends AbstractMojo {
             final KeyPair keyPair = Sigstore.generateKeyPair(Sigstore.SIGNING_ALGORITHM, Sigstore.SIGNING_ALGORITHM_SPEC);
 
             // sign email address with private key
-            final String signedEmail = Sigstore.signEmailAddress(idToken.getEmailAddress(), keyPair.getPrivate());
+            final String signedEmail = Sigstore.signActor(idToken.getActor(), keyPair.getPrivate());
 
             // push to fulcio, get signing cert chain
             final CertPath certs = fulcio.getSigningCert(signedEmail, keyPair.getPublic(), idToken.getIdToken());
@@ -160,7 +181,7 @@ public class Attest extends AbstractMojo {
 
             final String envelope = IntotoHelper.produceIntotoEnvelopeAsJson(statement, signer, true);
 
-            getLog().info("Attestation: " + envelope);
+            getLog().info("Created attestation: " + envelope);
 
             final String filePrefix = project.getArtifactId() + "-" + project.getVersion();
             final File attestFile = new File(outputDirectory, filePrefix + ".attestation.json");
@@ -170,7 +191,9 @@ public class Attest extends AbstractMojo {
             Sigstore.writeSigningCertToFile(certs, certFile);
 
             // upload to rekor transparency log
-            rekor.submitInToto(envelope, keyPair.getPublic());
+            final String rekorEntryUrl = rekor.submitInToto(envelope, keyPair.getPublic());
+
+            getLog().info(String.format("Created entry in transparency log: '%s'", rekorEntryUrl));
 
             // attach artifacts
             final Artifact jsonArtifact = new DefaultArtifact(project.getArtifact().getGroupId(), project.getArtifact().getArtifactId(), project.getArtifact().getVersion(), null, "attestion-json", null, artifactHandlerManager.getArtifactHandler("attestion-json"));
@@ -181,8 +204,7 @@ public class Attest extends AbstractMojo {
             certsArtifact.setFile(certFile);
             project.addAttachedArtifact(certsArtifact);
 
-        } catch (NullPointerException | InvalidModelException | NoSuchAlgorithmException | InvalidAlgorithmParameterException | SignatureException | InvalidKeyException | IOException | CertificateException e) {
-            e.printStackTrace();
+        } catch (final Exception e) {
             throw new MojoFailureException("Failed to sign attest", e);
         }
     }
