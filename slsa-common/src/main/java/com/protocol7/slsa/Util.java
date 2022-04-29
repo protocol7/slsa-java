@@ -18,7 +18,7 @@ import org.apache.commons.io.output.TeeOutputStream;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.maven.shared.jarsigner.JarSignerUtil;
 
-public class Sigstore {
+public class Util {
 
   private final String signerName = "sigstore";
   /** Signing algorithm to be used; default is ECDSA */

@@ -36,6 +36,7 @@
             <artifactId>slsa-maven-plugin</artifactId>
             <version>${project.version}</version>
             <configuration>
+              <builder>GitHub Actions</builder>
               <oidcDeviceFlow>true</oidcDeviceFlow>
               <oidcTokenUrl>${env.ACTIONS_ID_TOKEN_REQUEST_URL}</oidcTokenUrl>
               <oidcToken>${env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}</oidcToken>
@@ -66,9 +67,6 @@
             <groupId>com.protocol7</groupId>
             <artifactId>slsa-maven-plugin</artifactId>
             <version>${project.version}</version>
-            <configuration>
-              <oidcDeviceFlow>true</oidcDeviceFlow>
-            </configuration>
             <executions>
               <execution>
                 <goals>

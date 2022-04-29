@@ -1,13 +1,13 @@
 package com.protocol7.slsa.maven;
 
-import static com.protocol7.slsa.Sigstore.getHttpTransport;
+import static com.protocol7.slsa.Util.getHttpTransport;
 
 import com.google.common.collect.Lists;
 import com.google.common.io.BaseEncoding;
 import com.protocol7.slsa.Fulcio;
 import com.protocol7.slsa.OIDC;
 import com.protocol7.slsa.Rekor;
-import com.protocol7.slsa.Sigstore;
+import com.protocol7.slsa.Util;
 import io.github.intoto.dsse.helpers.SimpleECDSASigner;
 import io.github.intoto.helpers.IntotoHelper;
 import io.github.intoto.models.DigestSetAlgorithmType;
@@ -29,6 +29,7 @@ import java.util.Map;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.manager.ArtifactHandlerManager;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
@@ -48,6 +49,9 @@ public class Attest extends AbstractMojo {
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
 
+  @Parameter(defaultValue = "${session}", readonly = true, required = true)
+  private MavenSession session;
+
   @Parameter(defaultValue = "${session.request.startTime}", readonly = true)
   private Date timestamp;
 
@@ -56,6 +60,9 @@ public class Attest extends AbstractMojo {
 
   @Parameter(defaultValue = "${settings.localRepository}", readonly = true)
   private File localRepo;
+
+  @Parameter(property = "builder", defaultValue = "${user.name}")
+  private String builder;
 
   @Parameter(property = "oidcAuthUrl", defaultValue = OIDC.OIDC_AUTH_URL)
   private String oidcAuthUrl;
@@ -76,9 +83,6 @@ public class Attest extends AbstractMojo {
   private String rekorUrl;
 
   @Component private ArtifactHandlerManager artifactHandlerManager;
-
-  @Parameter(property = "builder", defaultValue = "${user.name}")
-  private String builder;
 
   private String sha256File(final File file) throws IOException, NoSuchAlgorithmException {
     final byte[] b = Files.readAllBytes(file.toPath());
@@ -111,13 +115,15 @@ public class Attest extends AbstractMojo {
 
     final Metadata metadata = new Metadata();
     final Completeness completeness = new Completeness();
-    completeness.setArguments(false);
+    completeness.setArguments(true);
     completeness.setEnvironment(false);
     completeness.setMaterials(true);
 
     metadata.setBuildStartedOn(timestamp.toInstant().atOffset(ZoneOffset.UTC));
 
     metadata.setCompleteness(completeness);
+
+    provenance.setMetadata(metadata);
 
     final List<Material> materials = new ArrayList<>();
     for (final Dependency dependency : project.getDependencies()) {
@@ -158,7 +164,10 @@ public class Attest extends AbstractMojo {
     }
     provenance.setMaterials(materials);
 
-    provenance.setMetadata(metadata);
+    final Recipe recipe = new Recipe();
+    recipe.setEntryPoint(String.join(" ", session.getGoals()));
+
+    provenance.setRecipe(recipe);
 
     final Statement statement = new Statement();
     statement.setSubject(subjects);
@@ -181,10 +190,10 @@ public class Attest extends AbstractMojo {
       getLog().info("Got OIDC JWT for: " + idToken.getActor());
 
       final KeyPair keyPair =
-          Sigstore.generateKeyPair(Sigstore.SIGNING_ALGORITHM, Sigstore.SIGNING_ALGORITHM_SPEC);
+          Util.generateKeyPair(Util.SIGNING_ALGORITHM, Util.SIGNING_ALGORITHM_SPEC);
 
       // sign email actor name with private key to prove access to private key
-      final String signedActor = Sigstore.signActor(idToken.getActor(), keyPair.getPrivate());
+      final String signedActor = Util.signActor(idToken.getActor(), keyPair.getPrivate());
 
       // push to fulcio, get signing cert chain
       final CertPath certs =
@@ -204,7 +213,7 @@ public class Attest extends AbstractMojo {
       Files.writeString(attestFile.toPath(), envelope);
 
       final File certFile = new File(outputDirectory, filePrefix + ".attestation.pem");
-      Sigstore.writeSigningCertToFile(certs, certFile);
+      Util.writeSigningCertToFile(certs, certFile);
       getLog().info("Certificate chain written to : " + certFile);
 
       // upload to rekor transparency log
